@@ -1,9 +1,7 @@
-#Educational Projects and Studies - Gustavo SIciliano
+# 📚 Projetos Acadêmicos e Estudos — Gustavo Siciliano
 
-This repository contains projects, exercises, and materials developed during my academic education and
-complementary studies in Information Technology.
+Este repositório reúne projetos, exercícios e materiais desenvolvidos durante minha formação acadêmica em **Análise e Desenvolvimento de Sistemas**.
 
-The purpose of this repository is to document my tevhnival learnig journey, organizing content by 
-semester, subject, and project type.
+Esta seção é dedicada aos conteúdos da **faculdade**, organizando os estudos por semestre, disciplina e tipo de projeto.
 
----
+O objetivo é documentar minha evolução técnica ao longo do curso, consolidando conhecimentos e demonstrando na prática as habilidades adquiridas.
