@@ -18,7 +18,7 @@ Endpoints:
   POST /retreinar
 """
 
-import os, json, datetime, uuid, subprocess, sys
+import os, json, datetime, uuid, subprocess, sys, traceback
 import numpy as np
 import pandas as pd
 import joblib
@@ -26,118 +26,96 @@ import oracledb
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-# Inicialização
-
 app = Flask(__name__)
 CORS(app)
 
-BASE = os.path.dirname(__file__)
+BASE       = os.path.dirname(__file__)
 MODELS_DIR = os.path.join(BASE, 'models')
-DATA_DIR = os.path.join(BASE, 'data')
+DATA_DIR   = os.path.join(BASE, 'data')
 SCRIPTS_DIR = os.path.join(BASE, 'scripts')
-RESULTADOS_FILE = os.path.join(DATA_DIR, 'resultados.json')
 
-# Configuração Oracle
 DB_CONFIG = {
-    'user': 'rm568419',
+    'user':     'rm568419',
     'password': '250204',
-    'host': 'oracle.fiap.com.br',
-    'port': 1521,
-    'sid': 'orcl',
+    'host':     'oracle.fiap.com.br',
+    'port':     1521,
+    'sid':      'orcl',
 }
 
 def _conectar_oracle():
-    """Retorna uma conexão aberta com o banco Oracle."""
     return oracledb.connect(**DB_CONFIG)
 
-# Carregamento dos modelos
 def _carregar(nome_arquivo):
-    """Carrega um artefato .joblib. Retorna None se não encontrado."""
     path = os.path.join(MODELS_DIR, nome_arquivo)
     if not os.path.exists(path):
         return None
     return joblib.load(path)
 
-# Modelos carregados na inicialização
 artefato_falta = _carregar('falta.joblib')
 artefato_arrec = _carregar('arrecadacao.joblib')
 
-# Utilitários gerais
+# Historico em memoria (nao depende de disco — compativel com Render gratuito)
+_historico = []
 
 def _salvar_resultado(tipo: str, entrada: dict, saida: dict):
-    """Persiste cada predição no histórico local (data/resultados.json)."""
-    os.makedirs(DATA_DIR, exist_ok=True)
-    historico = []
-    if os.path.exists(RESULTADOS_FILE):
-        with open(RESULTADOS_FILE, 'r', encoding='utf-8') as f:
-            historico = json.load(f)
-
-    historico.append({
-        'id': str(uuid.uuid4()),
-        'tipo': tipo,
+    """Persiste predicao em memoria. No Render gratuito nao ha disco persistente."""
+    _historico.append({
+        'id':          str(uuid.uuid4()),
+        'tipo':        tipo,
         'dt_predicao': datetime.datetime.now().isoformat(),
-        'entrada': entrada,
-        'saida': saida,
+        'entrada':     entrada,
+        'saida':       saida,
     })
 
-    with open(RESULTADOS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(historico, f, ensure_ascii=False, indent=2)
-
 def _erro(msg: str, code: int = 400):
-    """Resposta padronizada de erro."""
     return jsonify({'sucesso': False, 'erro': msg}), code
 
-# Mapeamentos de encoding
-
-TURNO_MAP   = {'MANHA': 0, 'TARDE': 1, 'NOITE': 2}
+TURNO_MAP    = {'MANHA': 0, 'TARDE': 1, 'NOITE': 2}
 PROGRAMA_MAP = {'DENTISTAS_DO_BEM': 0, 'APOLONICAS_DO_BEM': 1}
+
+# ==============================================================================
+# HEALTH
+# ==============================================================================
 
 @app.route('/health', methods=['GET'])
 def health():
-
-    """Verifica se a API e os modelos estão disponíveis."""
     return jsonify({
-        'status': 'ok',
+        'status':  'ok',
         'servico': 'Turma do Bem — API de IA',
-        'versao': 'v1.0',
+        'versao':  'v1.0',
         'modelos': {
-            'falta': 'carregado' if artefato_falta else 'não encontrado — rode run.py',
-            'arrecadacao': 'carregado' if artefato_arrec else 'não encontrado — rode run.py',
+            'falta':       'carregado' if artefato_falta else 'nao encontrado — rode run.py',
+            'arrecadacao': 'carregado' if artefato_arrec else 'nao encontrado — rode run.py',
         },
         'timestamp': datetime.datetime.now().isoformat(),
     })
 
-# Helpers de predição de FALTA
+# ==============================================================================
+# FALTA
+# ==============================================================================
+
+def _turno(v):
+    if isinstance(v, int):
+        return v
+    return TURNO_MAP.get(str(v).strip().upper(), 1)
+
+def _prog(v):
+    if isinstance(v, int):
+        return v
+    return PROGRAMA_MAP.get(str(v).strip().upper(), 0)
 
 def _parse_falta(body: dict) -> pd.DataFrame:
-    """
-    Converte o JSON recebido no DataFrame esperado pelo modelo de falta.
-
-    """
-    def _turno(v):
-
-        if isinstance(v, int):
-            return v
-        return TURNO_MAP.get(str(v).upper(), 1)
-
-    def _prog(v):
-        # Aceita int (0/1) ou string do programa
-        if isinstance(v, int):
-            return v
-        return PROGRAMA_MAP.get(str(v).upper(), 0)
-
-    distancia_km = float(body['distanciaKm'])
-    renda_familiar = float(body['rendaFamiliar'])
-    faltas_ant = int(body['faltasAnteriores'])
-    turno_pref = _turno(body.get('turnoPref', 1))
-    programa = _prog(body.get('programa', 0))
-    total_consultas = int(body.get('totalConsultas', max(faltas_ant, 1)))
-    turno_consulta = _turno(body.get('turnoConsulta', 1))
-    dist_consulta = float(body.get('distConsulta', distancia_km))
+    distancia_km      = float(body['distanciaKm'])
+    renda_familiar    = float(body['rendaFamiliar'])
+    faltas_ant        = int(body['faltasAnteriores'])
+    turno_pref        = _turno(body.get('turnoPref', 1))
+    programa          = _prog(body.get('programa', 0))
+    total_consultas   = max(int(body.get('totalConsultas', max(faltas_ant, 1))), 1)
+    turno_consulta    = _turno(body.get('turnoConsulta', 1))
+    dist_consulta     = float(body.get('distConsulta', distancia_km))
     dias_ate_consulta = int(body.get('diasAteConsulta', 3))
 
-    # Features derivadas
-    taxa_falta_hist = faltas_ant / max(total_consultas, 1)
+    taxa_falta_hist = faltas_ant / total_consultas
     score_risco = (
         (distancia_km / 50) * 0.4 +
         (1 - min(renda_familiar, 5000) / 5000) * 0.4 +
@@ -145,107 +123,99 @@ def _parse_falta(body: dict) -> pd.DataFrame:
     )
 
     return pd.DataFrame([{
-        'distancia_km': distancia_km,
-        'renda_familiar': renda_familiar,
-        'turno_preferencial':turno_pref,
-        'programa': programa,
-        'faltas_anteriores': faltas_ant,
-        'total_consultas': total_consultas,
-        'turno_consulta': turno_consulta,
-        'dist_consulta': dist_consulta,
-        'dias_ate_consulta': dias_ate_consulta,
+        'distancia_km':         distancia_km,
+        'renda_familiar':       renda_familiar,
+        'turno_preferencial':   turno_pref,
+        'programa':             programa,
+        'faltas_anteriores':    faltas_ant,
+        'total_consultas':      total_consultas,
+        'turno_consulta':       turno_consulta,
+        'dist_consulta':        dist_consulta,
+        'dias_ate_consulta':    dias_ate_consulta,
         'taxa_falta_historica': taxa_falta_hist,
-        'score_risco': score_risco,
+        'score_risco':          score_risco,
     }])
 
 def _risco_falta(prob: float) -> str:
-
     if prob >= 0.65: return 'ALTO'
     if prob >= 0.35: return 'MEDIO'
     return 'BAIXO'
 
 def _recomendacao_falta(risco: str, dias: int) -> str:
-
     if risco == 'ALTO':
-        return 'Enviar lembrete por SMS/WhatsApp 48h antes e confirmar presença 24h antes.'
+        return 'Enviar lembrete por SMS/WhatsApp 48h antes e confirmar presenca 24h antes.'
     if risco == 'MEDIO':
         return 'Enviar lembrete por e-mail 48h antes da consulta.'
-    return 'Nenhuma ação especial necessária — paciente com baixo risco de falta.'
+    return 'Nenhuma acao especial necessaria — paciente com baixo risco de falta.'
 
 @app.route('/predict/falta', methods=['POST'])
 def predict_falta():
     if not artefato_falta:
-        return _erro('Modelo de falta não encontrado. Execute run.py primeiro.', 503)
+        return _erro('Modelo de falta nao encontrado. Execute run.py primeiro.', 503)
 
     body = request.get_json(silent=True)
     if not body:
-        return _erro('JSON inválido ou ausente.')
+        return _erro('JSON invalido ou ausente.')
 
-    # Valida campos obrigatórios
     for c in ['distanciaKm', 'rendaFamiliar', 'faltasAnteriores']:
         if c not in body:
-            return _erro(f'Campo obrigatório ausente: {c}')
+            return _erro(f'Campo obrigatorio ausente: {c}')
 
     try:
-        X = _parse_falta(body)
-        X = X[artefato_falta['features']]
+        X    = _parse_falta(body)
+        X    = X[artefato_falta['features']]
         pipe = artefato_falta['pipeline']
 
-        prob = float(pipe.predict_proba(X)[0][1])
-        risco = _risco_falta(prob)
+        prob   = float(pipe.predict_proba(X)[0][1])
+        risco  = _risco_falta(prob)
         classe = 'FALTA' if prob >= 0.5 else 'NAO_FALTA'
 
         saida = {
-            'sucesso': True,
+            'sucesso':            True,
             'probabilidadeFalta': round(prob, 4),
-            'risco': risco,
-            'classePrevista': classe,
-            'recomendacao': _recomendacao_falta(risco, body.get('diasAteConsulta', 3)),
-            'modeloVersao': artefato_falta.get('versao', 'v1.0'),
+            'risco':              risco,
+            'classePrevista':     classe,
+            'recomendacao':       _recomendacao_falta(risco, body.get('diasAteConsulta', 3)),
+            'modeloVersao':       artefato_falta.get('versao', 'v1.0'),
         }
 
         _salvar_resultado('FALTA', body, saida)
         return jsonify(saida)
 
-    except KeyError as e:
-        return _erro(f'Feature ausente no modelo: {e}')
     except Exception as e:
+        traceback.print_exc()
         return _erro(f'Erro interno: {str(e)}', 500)
 
-# Helpers de predição de ARRECADAÇÃO
+# ==============================================================================
+# ARRECADACAO
+# ==============================================================================
 
 SAZON = {
-    1:0.85, 2:0.80, 3:0.88, 4:0.90,  5:1.20, 6:1.00,
-    7:0.95, 8:0.92, 9:0.98, 10:1.15, 11:1.05, 12:1.30
+    1: 0.85, 2: 0.80, 3: 0.88, 4: 0.90,  5: 1.20, 6: 1.00,
+    7: 0.95, 8: 0.92, 9: 0.98, 10: 1.15, 11: 1.05, 12: 1.30
 }
 
 def _parse_arrec(body: dict) -> pd.DataFrame:
-    """
-    Converte o JSON recebido no DataFrame esperado pelo modelo de arrecadação.
-
-    Campos obrigatórios: metaValor, duracaoDias, mesInicio, campanhasAnteriores
-    Campos opcionais:    anoInicio, qtdVoluntarios, qtdDoacoes
-    """
-    meta_valor = float(body['metaValor'])
-    duracao_dias = int(body['duracaoDias'])
-    mes_inicio = int(body['mesInicio'])
-    ano_inicio = int(body.get('anoInicio', 2025))
+    meta_valor           = float(body['metaValor'])
+    duracao_dias         = int(body['duracaoDias'])
+    mes_inicio           = int(body['mesInicio'])
+    ano_inicio           = int(body.get('anoInicio', 2025))
     campanhas_anteriores = int(body['campanhasAnteriores'])
-    qtd_voluntarios = int(body.get('qtdVoluntarios', 5))
-    qtd_doacoes = int(body.get('qtdDoacoes', max(1, int(meta_valor / 300))))
+    qtd_voluntarios      = max(int(body.get('qtdVoluntarios', 5)), 1)
+    qtd_doacoes          = max(int(body.get('qtdDoacoes', max(1, int(meta_valor / 300)))), 1)
 
-    fator_sazon = SAZON.get(mes_inicio, 1.0)
-    doacoes_por_vol = qtd_doacoes / max(qtd_voluntarios, 1)
+    fator_sazon     = SAZON.get(mes_inicio, 1.0)
+    doacoes_por_vol = qtd_doacoes / qtd_voluntarios
 
     return pd.DataFrame([{
-        'meta_valor': meta_valor,
-        'duracao_dias': duracao_dias,
-        'mes_inicio': mes_inicio,
-        'ano_inicio': ano_inicio,
-        'campanhas_anteriores': campanhas_anteriores,
-        'qtd_doacoes': qtd_doacoes,
-        'qtd_voluntarios': qtd_voluntarios,
-        'fator_sazonalidade': fator_sazon,
+        'meta_valor':            meta_valor,
+        'duracao_dias':          duracao_dias,
+        'mes_inicio':            mes_inicio,
+        'ano_inicio':            ano_inicio,
+        'campanhas_anteriores':  campanhas_anteriores,
+        'qtd_doacoes':           qtd_doacoes,
+        'qtd_voluntarios':       qtd_voluntarios,
+        'fator_sazonalidade':    fator_sazon,
         'doacoes_por_voluntario': doacoes_por_vol,
     }])
 
@@ -256,36 +226,34 @@ def _tendencia(previsto: float, meta: float) -> str:
     return 'BAIXA'
 
 def _recomendacao_arrec(tendencia: str, pct: float) -> str:
-
     if tendencia == 'ALTA':
-        return f'Campanha deve superar a meta ({pct*100:.0f}% previsto). Mantenha a estratégia atual.'
+        return f'Campanha deve superar a meta ({pct*100:.0f}% previsto). Mantenha a estrategia atual.'
     if tendencia == 'ESTAVEL':
-        return f'Campanha próxima da meta ({pct*100:.0f}% previsto). Intensifique a comunicação na reta final.'
-    return f'Risco de não atingir a meta ({pct*100:.0f}% previsto). Considere ampliar canais de divulgação.'
+        return f'Campanha proxima da meta ({pct*100:.0f}% previsto). Intensifique a comunicacao na reta final.'
+    return f'Risco de nao atingir a meta ({pct*100:.0f}% previsto). Considere ampliar canais de divulgacao.'
 
 @app.route('/predict/arrecadacao', methods=['POST'])
 def predict_arrecadacao():
     if not artefato_arrec:
-        return _erro('Modelo de arrecadação não encontrado. Execute run.py primeiro.', 503)
+        return _erro('Modelo de arrecadacao nao encontrado. Execute run.py primeiro.', 503)
 
     body = request.get_json(silent=True)
     if not body:
-        return _erro('JSON inválido ou ausente.')
+        return _erro('JSON invalido ou ausente.')
 
     for c in ['metaValor', 'duracaoDias', 'mesInicio', 'campanhasAnteriores']:
         if c not in body:
-            return _erro(f'Campo obrigatório ausente: {c}')
+            return _erro(f'Campo obrigatorio ausente: {c}')
 
     try:
-        X = _parse_arrec(body)
-        X = X[artefato_arrec['features']]
+        X    = _parse_arrec(body)
+        X    = X[artefato_arrec['features']]
         pipe = artefato_arrec['pipeline']
 
-        valor_previsto = float(pipe.predict(X)[0])
-        valor_previsto = max(valor_previsto, 0.0)
-        meta = float(body['metaValor'])
-        pct = valor_previsto / max(meta, 1)
-        tendencia = _tendencia(valor_previsto, meta)
+        valor_previsto = max(float(pipe.predict(X)[0]), 0.0)
+        meta           = float(body['metaValor'])
+        pct            = valor_previsto / max(meta, 1)
+        tendencia      = _tendencia(valor_previsto, meta)
 
         metricas_path = os.path.join(MODELS_DIR, 'metricas_arrecadacao.json')
         confianca = 0.80
@@ -294,11 +262,11 @@ def predict_arrecadacao():
                 confianca = round(max(0.0, min(1.0, json.load(f).get('r2_melhor', 0.80))), 4)
 
         saida = {
-            'sucesso': True,
+            'sucesso':       True,
             'valorPrevisto': round(valor_previsto, 2),
-            'confianca': confianca,
-            'tendencia': tendencia,
-            'pctMeta': round(pct, 4),
+            'confianca':     confianca,
+            'tendencia':     tendencia,
+            'pctMeta':       round(pct, 4),
             'recomendacao':  _recomendacao_arrec(tendencia, pct),
             'modeloVersao':  artefato_arrec.get('versao', 'v1.0'),
         }
@@ -306,199 +274,173 @@ def predict_arrecadacao():
         _salvar_resultado('ARRECADACAO', body, saida)
         return jsonify(saida)
 
-    except KeyError as e:
-        return _erro(f'Feature ausente no modelo: {e}')
     except Exception as e:
+        traceback.print_exc()
         return _erro(f'Erro interno: {str(e)}', 500)
 
-# GET /metricas/falta | /metricas/arrecadacao
+# ==============================================================================
+# METRICAS
+# ==============================================================================
 
 @app.route('/metricas/falta', methods=['GET'])
 def metricas_falta():
-
     path = os.path.join(MODELS_DIR, 'metricas_falta.json')
     if not os.path.exists(path):
-        return _erro('Métricas não encontradas. Treine o modelo primeiro.', 404)
+        return _erro('Metricas nao encontradas.', 404)
     with open(path, encoding='utf-8') as f:
         return jsonify(json.load(f))
 
 @app.route('/metricas/arrecadacao', methods=['GET'])
 def metricas_arrecadacao():
-
     path = os.path.join(MODELS_DIR, 'metricas_arrecadacao.json')
     if not os.path.exists(path):
-        return _erro('Métricas não encontradas. Treine o modelo primeiro.', 404)
+        return _erro('Metricas nao encontradas.', 404)
     with open(path, encoding='utf-8') as f:
         return jsonify(json.load(f))
 
+# ==============================================================================
+# RESULTADOS
+# ==============================================================================
+
 @app.route('/resultados', methods=['GET'])
 def resultados():
-
-    if not os.path.exists(RESULTADOS_FILE):
-        return jsonify([])
-    with open(RESULTADOS_FILE, encoding='utf-8') as f:
-        historico = json.load(f)
-
+    historico = list(_historico)
     tipo = request.args.get('tipo', '').upper()
     if tipo in ('FALTA', 'ARRECADACAO'):
         historico = [r for r in historico if r['tipo'] == tipo]
-
     return jsonify(historico)
+
+# ==============================================================================
+# PACIENTE / CONSULTA (requerem Oracle — so funcionam com VPN FIAP)
+# ==============================================================================
 
 @app.route('/paciente/<nome>', methods=['GET'])
 def buscar_paciente(nome):
     try:
-        conn = _conectar_oracle()
+        conn   = _conectar_oracle()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT
-                pa.id_paciente,
-                pe.nome,
-                pa.programa,
-                pa.renda_familiar,
-                pa.distancia_km,
-                pa.turno_preferencial,
-                c.id_consulta,
-                TO_CHAR(c.data_consulta, 'YYYY-MM-DD') AS data_consulta,
-                c.turno,
-                c.status,
-                c.distancia_km  AS dist_consulta,
-                (c.data_consulta - SYSDATE) AS dias_ate_consulta
+            SELECT pa.id_paciente, pe.nome, pa.programa,
+                   pa.renda_familiar, pa.distancia_km, pa.turno_preferencial,
+                   c.id_consulta, TO_CHAR(c.data_consulta,'YYYY-MM-DD'),
+                   c.turno, c.status, c.distancia_km,
+                   (c.data_consulta - SYSDATE)
             FROM tdb_Paciente pa
             JOIN tdb_Pessoa pe ON pe.cpf = pa.cpf
             LEFT JOIN tdb_Consulta c ON c.id_paciente = pa.id_paciente
             WHERE UPPER(pe.nome) LIKE UPPER(:nome)
             ORDER BY pa.id_paciente, c.data_consulta DESC
         """, nome=f'%{nome}%')
-
         rows = cursor.fetchall()
         cols = [d[0].lower() for d in cursor.description]
         conn.close()
 
-        # Agrupa consultas por paciente
         pacientes: dict = {}
         for row in rows:
             r   = dict(zip(cols, row))
             pid = r['id_paciente']
             if pid not in pacientes:
                 pacientes[pid] = {
-                    'idPaciente': pid,
-                    'nome': r['nome'],
-                    'programa': r['programa'],
+                    'idPaciente':   pid,
+                    'nome':         r['nome'],
+                    'programa':     r['programa'],
                     'rendaFamiliar': float(r['renda_familiar'] or 0),
-                    'distanciaKm': float(r['distancia_km'] or 0),
-                    'turnoPref': r['turno_preferencial'],
-                    'consultas': [],
+                    'distanciaKm':  float(r['distancia_km'] or 0),
+                    'turnoPref':    r['turno_preferencial'],
+                    'consultas':    [],
                 }
             if r['id_consulta']:
                 pacientes[pid]['consultas'].append({
-                    'idConsulta': int(r['id_consulta']),
-                    'dataConsulta': r['data_consulta'],
-                    'turno': r['turno'],
-                    'status': r['status'],
-                    'distConsulta': float(r['dist_consulta'] or 0),
-                    'diasAteConsulta': int(r['dias_ate_consulta'] or 0),
+                    'idConsulta':     int(r['id_consulta']),
+                    'dataConsulta':   r['to_char(c.data_consulta,\'yyyy-mm-dd\')'],
+                    'turno':          r['turno'],
+                    'status':         r['status'],
+                    'distConsulta':   float(r['distancia_km_1'] or 0),
+                    'diasAteConsulta': int(r['(c.data_consulta-sysdate)'] or 0),
                 })
-
         return jsonify(list(pacientes.values()))
 
     except Exception as e:
+        traceback.print_exc()
         return _erro(f'Erro ao buscar paciente: {str(e)}', 500)
 
 @app.route('/predict/falta/consulta/<int:id_consulta>', methods=['GET'])
 def predict_falta_por_consulta(id_consulta):
     if not artefato_falta:
-        return _erro('Modelo de falta não encontrado. Execute run.py primeiro.', 503)
-
+        return _erro('Modelo de falta nao encontrado.', 503)
     try:
-        conn = _conectar_oracle()
+        conn   = _conectar_oracle()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT
-                pa.distancia_km,
-                pa.renda_familiar,
-                pa.turno_preferencial,
-                pa.programa,
-                (SELECT COUNT(*) FROM tdb_Consulta c2
-                 WHERE c2.id_paciente = pa.id_paciente
-                   AND c2.status = 'FALTA') AS faltas_anteriores,
-                (SELECT COUNT(*) FROM tdb_Consulta c3
-                 WHERE c3.id_paciente = pa.id_paciente) AS total_consultas,
-                c.turno          AS turno_consulta,
-                c.distancia_km   AS dist_consulta,
-                (c.data_consulta - SYSDATE) AS dias_ate_consulta
+            SELECT pa.distancia_km, pa.renda_familiar,
+                   pa.turno_preferencial, pa.programa,
+                   (SELECT COUNT(*) FROM tdb_Consulta c2
+                    WHERE c2.id_paciente = pa.id_paciente
+                      AND c2.status = 'FALTA') AS faltas_anteriores,
+                   (SELECT COUNT(*) FROM tdb_Consulta c3
+                    WHERE c3.id_paciente = pa.id_paciente) AS total_consultas,
+                   c.turno, c.distancia_km,
+                   (c.data_consulta - SYSDATE)
             FROM tdb_Consulta c
             JOIN tdb_Paciente pa ON pa.id_paciente = c.id_paciente
-            WHERE c.id_consulta = :id_consulta
-        """, id_consulta=id_consulta)
-
-        row = cursor.fetchone()
-
+            WHERE c.id_consulta = :id
+        """, id=id_consulta)
+        row  = cursor.fetchone()
         cols = [d[0].lower() for d in cursor.description]
         conn.close()
 
         if not row:
-            return _erro(f'Consulta {id_consulta} não encontrada.', 404)
+            return _erro(f'Consulta {id_consulta} nao encontrada.', 404)
 
-        r = dict(zip(cols, row))
-
-        # Monta o body no mesmo formato do POST /predict/falta
+        r    = dict(zip(cols, row))
         body = {
-            'distanciaKm': float(r['distancia_km'] or 0),
-            'rendaFamiliar': float(r['renda_familiar'] or 0),
-            'turnoPref': r['turno_preferencial'],
-            'programa': r['programa'],
+            'distanciaKm':      float(r['distancia_km'] or 0),
+            'rendaFamiliar':    float(r['renda_familiar'] or 0),
+            'turnoPref':        r['turno_preferencial'],
+            'programa':         r['programa'],
             'faltasAnteriores': int(r['faltas_anteriores'] or 0),
-            'totalConsultas': int(r['total_consultas'] or 1),
-            'turnoConsulta': r['turno_consulta'],
-            'distConsulta': float(r['dist_consulta'] or 0),
-            'diasAteConsulta': int(r['dias_ate_consulta'] or 0),
+            'totalConsultas':   max(int(r['total_consultas'] or 1), 1),
+            'turnoConsulta':    r['turno'],
+            'distConsulta':     float(r['distancia_km_1'] or 0),
+            'diasAteConsulta':  int(r['(c.data_consulta-sysdate)'] or 0),
         }
 
-        X = _parse_falta(body)
-        X = X[artefato_falta['features']]
-        pipe = artefato_falta['pipeline']
-
-        prob = float(pipe.predict_proba(X)[0][1])
-        risco = _risco_falta(prob)
+        X    = _parse_falta(body)
+        X    = X[artefato_falta['features']]
+        prob = float(artefato_falta['pipeline'].predict_proba(X)[0][1])
+        risco  = _risco_falta(prob)
         classe = 'FALTA' if prob >= 0.5 else 'NAO_FALTA'
 
         saida = {
-            'sucesso': True,
-            'idConsulta': id_consulta,
+            'sucesso':            True,
+            'idConsulta':         id_consulta,
             'probabilidadeFalta': round(prob, 4),
-            'risco': risco,
-            'classePrevista': classe,
-            'recomendacao': _recomendacao_falta(risco, body['diasAteConsulta']),
-            'modeloVersao': artefato_falta.get('versao', 'v1.0'),
+            'risco':              risco,
+            'classePrevista':     classe,
+            'recomendacao':       _recomendacao_falta(risco, body['diasAteConsulta']),
+            'modeloVersao':       artefato_falta.get('versao', 'v1.0'),
         }
-
         _salvar_resultado('FALTA', body, saida)
         return jsonify(saida)
 
     except Exception as e:
+        traceback.print_exc()
         return _erro(f'Erro interno: {str(e)}', 500)
+
+# ==============================================================================
+# RETREINAR
+# ==============================================================================
 
 @app.route('/retreinar', methods=['POST'])
 def retreinar():
     global artefato_falta, artefato_arrec
     try:
-        # Detecta o Python do venv em Windows ou Linux/Mac
-        venv_win  = os.path.join(BASE, '..', 'venv', 'Scripts', 'python.exe')
-        venv_unix = os.path.join(BASE, '..', 'venv', 'bin', 'python')
-        if os.path.exists(venv_win):
-            python = os.path.abspath(venv_win)
-        elif os.path.exists(venv_unix):
-            python = os.path.abspath(venv_unix)
-        else:
-            python = sys.executable
-
+        python  = sys.executable
         scripts = [
-            ('gerar_dados', os.path.join(SCRIPTS_DIR, 'gerar_dados.py')),
-            ('treinar_falta', os.path.join(SCRIPTS_DIR, 'treinar_falta.py')),
+            ('gerar_dados',         os.path.join(SCRIPTS_DIR, 'gerar_dados.py')),
+            ('treinar_falta',       os.path.join(SCRIPTS_DIR, 'treinar_falta.py')),
             ('treinar_arrecadacao', os.path.join(SCRIPTS_DIR, 'treinar_arrecadacao.py')),
         ]
-
         erros = []
         for nome, path in scripts:
             r = subprocess.run([python, path], capture_output=True)
@@ -508,30 +450,32 @@ def retreinar():
         if erros:
             return _erro('Falha no retreino:\n' + '\n'.join(erros), 500)
 
-        # Recarrega os modelos sem reiniciar a API
         artefato_falta = _carregar('falta.joblib')
         artefato_arrec = _carregar('arrecadacao.joblib')
 
         return jsonify({
-            'sucesso': True,
-            'mensagem': 'Modelos retreinados e recarregados com sucesso.',
+            'sucesso':   True,
+            'mensagem':  'Modelos retreinados e recarregados.',
             'timestamp': datetime.datetime.now().isoformat(),
             'modelos': {
-                'falta': 'carregado' if artefato_falta else 'não encontrado',
-                'arrecadacao': 'carregado' if artefato_arrec else 'não encontrado',
+                'falta':       'carregado' if artefato_falta else 'nao encontrado',
+                'arrecadacao': 'carregado' if artefato_arrec else 'nao encontrado',
             },
         })
-
     except Exception as e:
+        traceback.print_exc()
         return _erro(f'Erro interno: {str(e)}', 500)
 
-# Main
+# ==============================================================================
+# MAIN
+# ==============================================================================
 
 if __name__ == '__main__':
-    print("=" * 60)
-    print(" Turma do Bem — API de IA | Flask | Porta 8000")
-    print("=" * 60)
-    print(f" Modelo falta: {'carregado' if artefato_falta else 'não encontrado — rode run.py'}")
-    print(f" Modelo arrecadação: {'carregado' if artefato_arrec else 'não encontrado — rode run.py'}")
-    print("=" * 60)
-    app.run(host='0.0.0.0', port=8000, debug=False)
+    print('=' * 60)
+    print(' Turma do Bem — API de IA | Flask | Porta 8000')
+    print('=' * 60)
+    print(f" Modelo falta:       {'carregado' if artefato_falta else 'nao encontrado'}")
+    print(f" Modelo arrecadacao: {'carregado' if artefato_arrec else 'nao encontrado'}")
+    print('=' * 60)
+    port = int(os.environ.get('PORT', 8000))
+    app.run(host='0.0.0.0', port=port, debug=False)
