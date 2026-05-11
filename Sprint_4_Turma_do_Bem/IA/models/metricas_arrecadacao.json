@@ -1,0 +1,36 @@
+{
+  "melhor_modelo": "Ridge (Regressão Linear)",
+  "r2_melhor": -0.9018,
+  "features": [
+    "meta_valor",
+    "duracao_dias",
+    "mes_inicio",
+    "ano_inicio",
+    "campanhas_anteriores",
+    "qtd_doacoes",
+    "qtd_voluntarios",
+    "fator_sazonalidade",
+    "doacoes_por_voluntario"
+  ],
+  "versao": "v1.0",
+  "modelos": {
+    "Ridge (Regressão Linear)": {
+      "MAE": 3438.29,
+      "RMSE": 4269.56,
+      "R2": -0.9018,
+      "MAPE": 22.66
+    },
+    "Random Forest": {
+      "MAE": 3548.35,
+      "RMSE": 4293.72,
+      "R2": -0.9234,
+      "MAPE": 24.0
+    },
+    "XGBoost": {
+      "MAE": 5076.62,
+      "RMSE": 7352.23,
+      "R2": -4.6396,
+      "MAPE": 28.75
+    }
+  }
+}
