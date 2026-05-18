@@ -1,38 +1,158 @@
-// Groq API — llama-3.1-8b-instant
-// Documentação: https://console.groq.com/docs/openai
+// ─────────────────────────────────────────────────────────────────────────────
+// services/api.ts
+// Camada de comunicação com o back-end Java e a API de IA (Python/Flask).
+//
+// As URLs são lidas das variáveis de ambiente definidas no .env:
+//   VITE_API_URL=https://coffee-shrill-food.ngrok-free.dev/api
+//   VITE_IA_URL=https://turma-do-bem-ia.onrender.com
+// ─────────────────────────────────────────────────────────────────────────────
 
-const GROQ_KEY = 'COLE_SUA_NOVA_CHAVE_AQUI'
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
+const BASE_URL = import.meta.env.VITE_API_URL
+const IA_URL   = import.meta.env.VITE_IA_URL
 
-export async function gerarDescricaoClinica(anotacoes: string): Promise<string> {
-  const resp = await fetch(GROQ_URL, {
-    method: 'POST',
+// ─── Utilitário de fetch ──────────────────────────────────────────────────────
+async function request<T>(
+  url: string,
+  options?: RequestInit,
+): Promise<T> {
+  const response = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${GROQ_KEY}`,
+      'ngrok-skip-browser-warning': 'true',
+      ...options?.headers,
     },
-    body: JSON.stringify({
-      model: 'llama-3.1-8b-instant',
-      temperature: 0.3,
-      max_tokens: 250,
-      messages: [
-        {
-          role: 'system',
-          content: 'Você é um assistente odontológico da ONG Turma do Bem. Gere descrições clínicas profissionais e objetivas para prontuários odontológicos. Use linguagem técnica simples, em português, com no máximo 3 frases curtas. Não invente procedimentos que não foram mencionados. Responda apenas com o texto do prontuário, sem introdução ou explicação.',
-        },
-        {
-          role: 'user',
-          content: `Anotações do dentista: "${anotacoes}"`,
-        },
-      ],
-    }),
+    ...options,
   })
 
-  if (!resp.ok) {
-    const err = await resp.json()
-    throw new Error(err?.error?.message ?? 'Erro ao chamar a IA')
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(errorText || `Erro ${response.status}`)
   }
 
-  const data = await resp.json()
-  return data.choices?.[0]?.message?.content?.trim() ?? ''
+  if (response.status === 204) return null as T
+
+  return response.json() as Promise<T>
+}
+
+// ─── Pacientes ────────────────────────────────────────────────────────────────
+export const PacienteService = {
+  listar:   ()          => request(`${BASE_URL}/pacientes`),
+  buscar:   (id: number)=> request(`${BASE_URL}/pacientes/${id}`),
+  criar:    (body: unknown) => request(`${BASE_URL}/pacientes`, { method: 'POST', body: JSON.stringify(body) }),
+  atualizar:(id: number, body: unknown) => request(`${BASE_URL}/pacientes/${id}`, { method: 'PUT',  body: JSON.stringify(body) }),
+  deletar:  (id: number)=> request(`${BASE_URL}/pacientes/${id}`, { method: 'DELETE' }),
+}
+
+// ─── Dentistas ────────────────────────────────────────────────────────────────
+export const DentistaService = {
+  listar:   ()          => request(`${BASE_URL}/dentistas`),
+  buscar:   (id: number)=> request(`${BASE_URL}/dentistas/${id}`),
+  criar:    (body: unknown) => request(`${BASE_URL}/dentistas`, { method: 'POST', body: JSON.stringify(body) }),
+  atualizar:(id: number, body: unknown) => request(`${BASE_URL}/dentistas/${id}`, { method: 'PUT',  body: JSON.stringify(body) }),
+  deletar:  (id: number)=> request(`${BASE_URL}/dentistas/${id}`, { method: 'DELETE' }),
+}
+
+// ─── Consultas ────────────────────────────────────────────────────────────────
+export const ConsultaService = {
+  listar:   ()          => request(`${BASE_URL}/consultas`),
+  buscar:   (id: number)=> request(`${BASE_URL}/consultas/${id}`),
+  criar:    (body: unknown) => request(`${BASE_URL}/consultas`, { method: 'POST', body: JSON.stringify(body) }),
+  atualizar:(id: number, body: unknown) => request(`${BASE_URL}/consultas/${id}`, { method: 'PUT',  body: JSON.stringify(body) }),
+  deletar:  (id: number)=> request(`${BASE_URL}/consultas/${id}`, { method: 'DELETE' }),
+}
+
+// ─── Campanhas ────────────────────────────────────────────────────────────────
+export const CampanhaService = {
+  listar:   ()          => request(`${BASE_URL}/campanhas`),
+  buscar:   (id: number)=> request(`${BASE_URL}/campanhas/${id}`),
+  criar:    (body: unknown) => request(`${BASE_URL}/campanhas`, { method: 'POST', body: JSON.stringify(body) }),
+  atualizar:(id: number, body: unknown) => request(`${BASE_URL}/campanhas/${id}`, { method: 'PUT',  body: JSON.stringify(body) }),
+  deletar:  (id: number)=> request(`${BASE_URL}/campanhas/${id}`, { method: 'DELETE' }),
+}
+
+// ─── Doações ─────────────────────────────────────────────────────────────────
+export const DoacaoService = {
+  listar:   ()          => request(`${BASE_URL}/doacoes`),
+  criar:    (body: unknown) => request(`${BASE_URL}/doacoes`, { method: 'POST', body: JSON.stringify(body) }),
+  deletar:  (id: number)=> request(`${BASE_URL}/doacoes/${id}`, { method: 'DELETE' }),
+}
+
+// ─── Materiais ────────────────────────────────────────────────────────────────
+export const MaterialService = {
+  listar:   ()          => request(`${BASE_URL}/materiais`),
+  criar:    (body: unknown) => request(`${BASE_URL}/materiais`, { method: 'POST', body: JSON.stringify(body) }),
+  atualizar:(id: number, body: unknown) => request(`${BASE_URL}/materiais/${id}`, { method: 'PUT',  body: JSON.stringify(body) }),
+  deletar:  (id: number)=> request(`${BASE_URL}/materiais/${id}`, { method: 'DELETE' }),
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+export const DashboardService = {
+  stats: () => request(`${BASE_URL}/dashboard/stats`),
+}
+
+// ─── IA — Python / FastAPI ────────────────────────────────────────────────────
+export const IAService = {
+  health:            ()              => request(`${IA_URL}/health`),
+  preverFalta:       (body: unknown) => request(`${IA_URL}/predict/falta`,       { method: 'POST', body: JSON.stringify(body) }),
+  preverArrecadacao: (body: unknown) => request(`${IA_URL}/predict/arrecadacao`, { method: 'POST', body: JSON.stringify(body) }),
+}
+
+// ─── ViaCEP ──────────────────────────────────────────────────────────────────
+export const ViaCEP = {
+  buscar: async (cep: string) => {
+    const res = await fetch(`https://viacep.com.br/ws/${cep.replace(/\D/g, '')}/json/`)
+    const data = await res.json()
+    if (data.erro) throw new Error('CEP não encontrado')
+    return data
+  },
+}
+
+// ─── API IBGE — Municípios por UF ────────────────────────────────────────────
+export interface UFItem {
+  id: number
+  sigla: string
+  nome: string
+}
+
+export interface MunicipioItem {
+  id: number
+  nome: string
+}
+
+export const IBGE = {
+  listarUFs: async (): Promise<UFItem[]> => {
+    const resp = await fetch('https://servicodados.ibge.gov.br/api/v1/localidades/estados?orderBy=nome')
+    if (!resp.ok) throw new Error('Erro ao buscar UFs')
+    return resp.json()
+  },
+
+  listarMunicipios: async (uf: string): Promise<MunicipioItem[]> => {
+    if (!uf) return []
+    const resp = await fetch(
+      `https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios?orderBy=nome`
+    )
+    if (!resp.ok) throw new Error(`Erro ao buscar municípios de ${uf}`)
+    return resp.json()
+  },
+}
+
+// ─── BrasilAPI — Feriados Nacionais ──────────────────────────────────────────
+export interface Feriado {
+  date: string   // 'YYYY-MM-DD'
+  name: string
+  type: string
+}
+
+export const FeriadosAPI = {
+  listar: async (ano: number): Promise<Feriado[]> => {
+    const resp = await fetch(`https://brasilapi.com.br/api/feriados/v1/${ano}`)
+    if (!resp.ok) throw new Error('Erro ao buscar feriados')
+    return resp.json()
+  },
+
+  eFeriado: async (data: string): Promise<Feriado | null> => {
+    const ano = new Date(data).getFullYear()
+    const feriados = await FeriadosAPI.listar(ano)
+    return feriados.find(f => f.date === data) ?? null
+  },
 }
