@@ -2,24 +2,25 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
-const BASE_URL = 'https://coffee-shrill-food.ngrok-free.dev/api'
-const GREEN = '#7ab800'
-const DARK  = '#2d4a1e'
+// ✅ URL lida do .env — nunca mais hardcoded
+const BASE_URL = import.meta.env.VITE_API_URL
+const GREEN  = '#7ab800'
+const DARK   = '#2d4a1e'
 const ORANGE = '#f5821f'
 
 export default function Login() {
   const { login, usuario } = useAuth()
   const navigate = useNavigate()
 
-  const [loginVal,    setLoginVal]    = useState('')
-  const [senha,       setSenha]       = useState('')
-  const [showSenha,   setShowSenha]   = useState(false)
-  const [lembrar,     setLembrar]     = useState(false)
-  const [erro,        setErro]        = useState('')
-  const [loading,     setLoading]     = useState(false)
-  const [tentativas,  setTentativas]  = useState(0)
-  const [bloqueado,   setBloqueado]   = useState(false)
-  const [countdown,   setCountdown]   = useState(0)
+  const [loginVal,   setLoginVal]   = useState('')
+  const [senha,      setSenha]      = useState('')
+  const [showSenha,  setShowSenha]  = useState(false)
+  const [lembrar,    setLembrar]    = useState(false)
+  const [erro,       setErro]       = useState('')
+  const [loading,    setLoading]    = useState(false)
+  const [tentativas, setTentativas] = useState(0)
+  const [bloqueado,  setBloqueado]  = useState(false)
+  const [countdown,  setCountdown]  = useState(0)
 
   useEffect(() => {
     if (usuario) navigate('/erp', { replace: true })
@@ -55,7 +56,11 @@ export default function Login() {
     try {
       const resp = await fetch(`${BASE_URL}/usuarios/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+        headers: {
+          'Content-Type': 'application/json',
+          // Necessário para bypassar a tela de aviso do ngrok no browser
+          'ngrok-skip-browser-warning': 'true',
+        },
         body: JSON.stringify({ login: loginVal.trim(), senha }),
       })
 
@@ -81,7 +86,7 @@ export default function Login() {
       navigate('/erp', { replace: true })
 
     } catch {
-      setErro('Não foi possível conectar ao servidor. Verifique se a API Java está rodando.')
+      setErro('Não foi possível conectar ao servidor. Verifique se a API Java está rodando e se a URL no .env está correta.')
     } finally {
       setLoading(false)
     }
@@ -95,7 +100,7 @@ export default function Login() {
         style={{ backgroundColor: DARK }}>
         <div>
           <img src="/image/logo-dnn.png" alt="De Novo Não!"
-            className="h-14 mb-12"  />
+            className="h-14 mb-12" />
           <h1 className="font-display font-extrabold text-4xl text-white leading-tight mb-4">
             Transformando sorrisos,<br />
             <span style={{ color: GREEN }}>transformando vidas.</span>
@@ -127,7 +132,7 @@ export default function Login() {
           {/* Mobile logo */}
           <div className="lg:hidden text-center mb-8">
             <img src="/image/logo-dnn.png" alt="De Novo Não!"
-              className="h-12 mx-auto mb-2"  />
+              className="h-12 mx-auto mb-2" />
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
