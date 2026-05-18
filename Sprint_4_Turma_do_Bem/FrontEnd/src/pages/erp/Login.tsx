@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
-const BASE_URL = 'https://coffee-shrill-food.ngrok-free.dev'
+const BASE_URL = 'https://coffee-shrill-food.ngrok-free.dev/api'
 const GREEN = '#7ab800'
 const DARK  = '#2d4a1e'
 const ORANGE = '#f5821f'
