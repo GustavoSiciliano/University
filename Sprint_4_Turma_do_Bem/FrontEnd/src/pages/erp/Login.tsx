@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
-const BASE_URL = 'https://coffee-shrill-food.ngrok-free.dev/api'
+const BASE_URL = 'https://coffee-shrill-food.ngrok-free.dev'
 const GREEN = '#7ab800'
 const DARK  = '#2d4a1e'
 const ORANGE = '#f5821f'
@@ -55,7 +55,7 @@ export default function Login() {
     try {
       const resp = await fetch(`${BASE_URL}/usuarios/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
         body: JSON.stringify({ login: loginVal.trim(), senha }),
       })
 
