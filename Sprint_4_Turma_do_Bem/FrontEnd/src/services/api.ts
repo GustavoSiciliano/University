@@ -1,11 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // services/api.ts
 // Camada de comunicação com o back-end Java e a API de IA (Python/Flask).
-// Troque BASE_URL e IA_URL pela URL real do deploy antes de colocar em produção.
+//
+// As URLs são lidas das variáveis de ambiente definidas no .env:
+//   VITE_API_URL=https://coffee-shrill-food.ngrok-free.dev/api
+//   VITE_IA_URL=https://turma-do-bem-ia.onrender.com
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BASE_URL = 'https://coffee-shrill-food.ngrok-free.dev/api'
-const IA_URL   = 'https://turma-do-bem-ia.onrender.com'
+const BASE_URL = import.meta.env.VITE_API_URL
+const IA_URL   = import.meta.env.VITE_IA_URL
 
 // ─── Utilitário de fetch ──────────────────────────────────────────────────────
 async function request<T>(
@@ -13,7 +16,12 @@ async function request<T>(
   options?: RequestInit,
 ): Promise<T> {
   const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true', ...options?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      // Cabeçalho necessário para bypassar a tela de aviso do ngrok
+      'ngrok-skip-browser-warning': 'true',
+      ...options?.headers,
+    },
     ...options,
   })
 
@@ -86,9 +94,9 @@ export const DashboardService = {
 
 // ─── IA — Python / FastAPI ────────────────────────────────────────────────────
 export const IAService = {
-  health:            ()           => request(`${IA_URL}/health`),
-  preverFalta:       (body: unknown) => request(`${IA_URL}/predict/falta`,        { method: 'POST', body: JSON.stringify(body) }),
-  preverArrecadacao: (body: unknown) => request(`${IA_URL}/predict/arrecadacao`,  { method: 'POST', body: JSON.stringify(body) }),
+  health:            ()              => request(`${IA_URL}/health`),
+  preverFalta:       (body: unknown) => request(`${IA_URL}/predict/falta`,       { method: 'POST', body: JSON.stringify(body) }),
+  preverArrecadacao: (body: unknown) => request(`${IA_URL}/predict/arrecadacao`, { method: 'POST', body: JSON.stringify(body) }),
 }
 
 // ─── ViaCEP ──────────────────────────────────────────────────────────────────
@@ -102,7 +110,6 @@ export const ViaCEP = {
 }
 
 // ─── API IBGE — Municípios por UF ────────────────────────────────────────────
-// Documentação: https://servicodados.ibge.gov.br/api/docs/localidades
 export interface UFItem {
   id: number
   sigla: string
@@ -132,7 +139,6 @@ export const IBGE = {
 }
 
 // ─── BrasilAPI — Feriados Nacionais ──────────────────────────────────────────
-// Documentação: https://brasilapi.com.br/docs#tag/Feriados-Nacionais
 export interface Feriado {
   date: string   // 'YYYY-MM-DD'
   name: string
@@ -147,7 +153,6 @@ export const FeriadosAPI = {
   },
 
   eFeriado: async (data: string): Promise<Feriado | null> => {
-    // data no formato 'YYYY-MM-DD'
     const ano = new Date(data).getFullYear()
     const feriados = await FeriadosAPI.listar(ano)
     return feriados.find(f => f.date === data) ?? null
