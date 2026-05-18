@@ -4,7 +4,7 @@
 // Troque BASE_URL e IA_URL pela URL real do deploy antes de colocar em produção.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BASE_URL = 'https://coffee-shrill-food.ngrok-free.dev/api'
+const BASE_URL = 'https://coffee-shrill-food.ngrok-free.dev'
 const IA_URL   = 'https://turma-do-bem-ia.onrender.com'
 
 // ─── Utilitário de fetch ──────────────────────────────────────────────────────
@@ -13,7 +13,7 @@ async function request<T>(
   options?: RequestInit,
 ): Promise<T> {
   const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true', ...options?.headers },
     ...options,
   })
 
