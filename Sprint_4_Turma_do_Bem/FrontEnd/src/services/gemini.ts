@@ -1,7 +1,7 @@
 // Groq API — llama-3.1-8b-instant
 // Documentação: https://console.groq.com/docs/openai
 
-const GROQ_KEY = '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'
+const GROQ_KEY = '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'
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
 export async function gerarDescricaoClinica(anotacoes: string): Promise<string> {
