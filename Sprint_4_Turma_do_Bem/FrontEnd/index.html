@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/image/logo-dnn.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="De Novo Não! — Sistema de gestão odontológica da ONG Turma do Bem" />
+    <title>De Novo Não! — Turma do Bem</title>
+
+    <!-- UserWay — carrega invisível -->
+    <script src="https://cdn.userway.org/widget.js" data-account="t6jbFigNMs" async></script>
+
+    <!-- VLibras Gov.br -->
+    <script src="https://vlibras.gov.br/app/vlibras-plugin.js"></script>
+
+    <style>
+      /* Esconde botão nativo do UserWay completamente */
+      #userwayAccessibilityIcon,
+      .userway_buttons_wrapper,
+      #uw-launcher-container,
+      [class*="userway"] > button:first-child,
+      [id*="userway-btn"] {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+
+      /* VLibras fica fora da tela até ser ativado */
+      [vw] {
+        position: fixed !important;
+        bottom: -300px !important;
+        right: -300px !important;
+        z-index: 99998 !important;
+        transition: bottom 0.3s ease, right 0.3s ease;
+      }
+      [vw].visivel {
+        bottom: 90px !important;
+        right: 24px !important;
+      }
+
+      /* FAB de acessibilidade */
+      #a11y-fab {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 99999;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+
+      #a11y-toggle {
+        width: 52px; height: 52px;
+        border-radius: 50%;
+        background: #2d4a1e;
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-size: 24px;
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        transition: background 0.2s, transform 0.2s;
+      }
+      #a11y-toggle:hover { background: #7ab800; transform: scale(1.06); }
+      #a11y-toggle.ativo  { background: #7ab800; }
+
+      #a11y-menu {
+        position: absolute;
+        bottom: 62px;
+        right: 0;
+        display: none;
+        flex-direction: column;
+        gap: 8px;
+        width: 215px;
+      }
+      #a11y-menu.open { display: flex; }
+
+      .a11y-opt {
+        display: flex; align-items: center; gap: 10px;
+        background: white;
+        border: 1.5px solid #e5e7eb;
+        border-radius: 14px;
+        padding: 10px 14px;
+        font-size: 13px; font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+        color: #2d4a1e;
+        transition: all 0.15s;
+        text-align: left;
+      }
+      .a11y-opt:hover { background: #f4f9ec; border-color: #7ab800; }
+      .a11y-opt .ico   { font-size: 18px; }
+    </style>
+  </head>
+  <body>
+
+    <!-- VLibras (fora da tela, ativado via JS) -->
+    <div vw class="enabled">
+      <div vw-access-button class="active"></div>
+      <div vw-plugin-wrapper><div class="vw-plugin-top-wrapper"></div></div>
+    </div>
+
+    <!-- Botão ♿ unificado -->
+    <div id="a11y-fab">
+      <div id="a11y-menu">
+        <button class="a11y-opt" id="btn-vlibras">
+          <span class="ico">🤟</span>
+          <span>VLibras — Libras</span>
+        </button>
+        <button class="a11y-opt" id="btn-userway">
+          <span class="ico">♿</span>
+          <span>Acessibilidade</span>
+        </button>
+      </div>
+      <button id="a11y-toggle" aria-label="Acessibilidade" title="Ferramentas de acessibilidade">♿</button>
+    </div>
+
+    <script>
+      // Inicializa VLibras
+      document.addEventListener('DOMContentLoaded', function () {
+        try { new window.VLibras.Widget('https://vlibras.gov.br/app') } catch (e) {}
+      })
+
+      // Esconde botão nativo do UserWay sempre que ele aparecer
+      var uwObserver = new MutationObserver(function () {
+        var seletores = [
+          '#userwayAccessibilityIcon',
+          '.userway_buttons_wrapper',
+          '#uw-launcher-container',
+          '[id*="userway-btn"]',
+        ]
+        seletores.forEach(function (sel) {
+          document.querySelectorAll(sel).forEach(function (el) {
+            el.style.setProperty('display',        'none',   'important')
+            el.style.setProperty('visibility',     'hidden', 'important')
+            el.style.setProperty('pointer-events', 'none',   'important')
+          })
+        })
+      })
+      uwObserver.observe(document.body, { childList: true, subtree: true })
+
+      var fab    = document.getElementById('a11y-fab')
+      var menu   = document.getElementById('a11y-menu')
+      var toggle = document.getElementById('a11y-toggle')
+
+      // Abre / fecha menu
+      toggle.addEventListener('click', function (e) {
+        e.stopPropagation()
+        var isOpen = menu.classList.toggle('open')
+        toggle.classList.toggle('ativo', isOpen)
+      })
+
+      // Fecha ao clicar fora
+      document.addEventListener('click', function (e) {
+        if (!fab.contains(e.target)) {
+          menu.classList.remove('open')
+          toggle.classList.remove('ativo')
+        }
+      })
+
+      // VLibras — aparece ao clicar, some ao fechar
+      document.getElementById('btn-vlibras').addEventListener('click', function () {
+        menu.classList.remove('open')
+        toggle.classList.remove('ativo')
+
+        var vwEl = document.querySelector('[vw]')
+        if (!vwEl) return
+
+        vwEl.classList.add('visivel')
+
+        // Clica no botão nativo do VLibras para abrir o painel
+        setTimeout(function () {
+          try {
+            var btn = document.querySelector('[vw-access-button]')
+            if (btn) btn.click()
+          } catch (e) {}
+        }, 100)
+
+        // Observa quando o painel fechar para sumir de volta
+        var vwObserver = new MutationObserver(function () {
+          var wrapper = document.querySelector('[vw-plugin-wrapper]')
+          if (wrapper) {
+            var style = window.getComputedStyle(wrapper)
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+              vwEl.classList.remove('visivel')
+              vwObserver.disconnect()
+            }
+          }
+        })
+        vwObserver.observe(vwEl, { attributes: true, childList: true, subtree: true })
+
+        // Segurança: se não detectar fechamento em 5min, some mesmo assim
+        setTimeout(function () {
+          vwEl.classList.remove('visivel')
+          vwObserver.disconnect()
+        }, 300000)
+      })
+
+      // UserWay — abre painel e esconde botão nativo
+      document.getElementById('btn-userway').addEventListener('click', function () {
+        menu.classList.remove('open')
+        toggle.classList.remove('ativo')
+
+        var tentativas = 0
+        var tentar = setInterval(function () {
+          tentativas++
+          if (window.UserWay && typeof window.UserWay.widgetOpen === 'function') {
+            clearInterval(tentar)
+            window.UserWay.widgetOpen()
+          }
+          if (tentativas > 30) clearInterval(tentar)
+        }, 150)
+      })
+    </script>
+
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
