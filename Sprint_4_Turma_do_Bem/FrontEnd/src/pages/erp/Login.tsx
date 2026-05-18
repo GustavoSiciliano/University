@@ -2,11 +2,20 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
-// ✅ URL lida do .env — nunca mais hardcoded
-const BASE_URL = import.meta.env.VITE_API_URL
 const GREEN  = '#7ab800'
 const DARK   = '#2d4a1e'
 const ORANGE = '#f5821f'
+
+// ─── Usuários simulados — remover após integração com a API Java ──────────────
+const USUARIOS_MOCK: Record<string, { idUsuario: number; nome: string; perfil: 'ADMIN' | 'DENTISTA' | 'VOLUNTARIO' | 'GESTOR'; senha: string }> = {
+  'admin.tdb':     { idUsuario: 1, nome: 'Admin TDB',      perfil: 'ADMIN',      senha: 'hash_admin'    },
+  'joao.silva':    { idUsuario: 2, nome: 'João Silva',     perfil: 'DENTISTA',   senha: 'hash_joao'     },
+  'rafael.gomes':  { idUsuario: 3, nome: 'Rafael Gomes',   perfil: 'GESTOR',     senha: 'hash_rafael'   },
+  'fernanda.lima': { idUsuario: 4, nome: 'Fernanda Lima',  perfil: 'VOLUNTARIO', senha: 'hash_fernanda' },
+  'ana.costa':     { idUsuario: 5, nome: 'Ana Costa',      perfil: 'DENTISTA',   senha: 'hash_ana'      },
+  'carlos.lima':   { idUsuario: 6, nome: 'Carlos Lima',    perfil: 'GESTOR',     senha: 'hash_carlos'   },
+  'bruno.alves':   { idUsuario: 7, nome: 'Bruno Alves',    perfil: 'VOLUNTARIO', senha: 'hash_bruno'    },
+}
 
 export default function Login() {
   const { login, usuario } = useAuth()
@@ -26,13 +35,11 @@ export default function Login() {
     if (usuario) navigate('/erp', { replace: true })
   }, [usuario])
 
-  // Carrega login salvo
   useEffect(() => {
     const salvo = localStorage.getItem('dnn_login_salvo')
     if (salvo) { setLoginVal(salvo); setLembrar(true) }
   }, [])
 
-  // Countdown de bloqueio
   useEffect(() => {
     if (countdown <= 0) return
     const t = setTimeout(() => {
@@ -53,54 +60,41 @@ export default function Login() {
     setLoading(true)
     setErro('')
 
-    try {
-      const resp = await fetch(`${BASE_URL}/usuarios/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Necessário para bypassar a tela de aviso do ngrok no browser
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: JSON.stringify({ login: loginVal.trim(), senha }),
-      })
+    // Simula delay de rede
+    await new Promise(res => setTimeout(res, 800))
 
-      const data = await resp.json()
+    const u = USUARIOS_MOCK[loginVal.trim()]
 
-      if (!resp.ok) {
-        const novasTentativas = tentativas + 1
-        setTentativas(novasTentativas)
-        if (novasTentativas >= 3) {
-          setBloqueado(true)
-          setCountdown(30)
-          setErro('Muitas tentativas. Aguarde 30 segundos.')
-        } else {
-          setErro(`Login ou senha inválidos. ${3 - novasTentativas} tentativa(s) restante(s).`)
-        }
-        return
+    if (!u || u.senha !== senha) {
+      const novasTentativas = tentativas + 1
+      setTentativas(novasTentativas)
+      if (novasTentativas >= 3) {
+        setBloqueado(true)
+        setCountdown(30)
+        setErro('Muitas tentativas. Aguarde 30 segundos.')
+      } else {
+        setErro(`Login ou senha inválidos. ${3 - novasTentativas} tentativa(s) restante(s).`)
       }
-
-      if (lembrar) localStorage.setItem('dnn_login_salvo', loginVal.trim())
-      else         localStorage.removeItem('dnn_login_salvo')
-
-      login({ idUsuario: data.idUsuario, nome: data.nome, login: data.login, perfil: data.perfil })
-      navigate('/erp', { replace: true })
-
-    } catch {
-      setErro('Não foi possível conectar ao servidor. Verifique se a API Java está rodando e se a URL no .env está correta.')
-    } finally {
       setLoading(false)
+      return
     }
+
+    if (lembrar) localStorage.setItem('dnn_login_salvo', loginVal.trim())
+    else         localStorage.removeItem('dnn_login_salvo')
+
+    login({ idUsuario: u.idUsuario, nome: u.nome, login: loginVal.trim(), perfil: u.perfil })
+    navigate('/erp', { replace: true })
+    setLoading(false)
   }
 
   return (
     <div className="min-h-screen flex" style={{ backgroundColor: '#f4f9ec' }}>
 
-      {/* Painel esquerdo — visual */}
+      {/* Painel esquerdo */}
       <div className="hidden lg:flex lg:w-1/2 flex-col justify-between p-12"
         style={{ backgroundColor: DARK }}>
         <div>
-          <img src="/image/logo-dnn.png" alt="De Novo Não!"
-            className="h-14 mb-12" />
+          <img src="/image/logo-dnn.png" alt="De Novo Não!" className="h-14 mb-12" />
           <h1 className="font-display font-extrabold text-4xl text-white leading-tight mb-4">
             Transformando sorrisos,<br />
             <span style={{ color: GREEN }}>transformando vidas.</span>
@@ -110,11 +104,10 @@ export default function Login() {
             a pacientes que mais precisam de cuidados odontológicos.
           </p>
         </div>
-
         <div className="space-y-4">
           {[
             { num: '2M+',   label: 'sorrisos transformados' },
-            { num: '7mil+', label: 'dentistas voluntários' },
+            { num: '7mil+', label: 'dentistas voluntários'  },
             { num: '27+',   label: 'anos de impacto social' },
           ].map(s => (
             <div key={s.label} className="flex items-center gap-4">
@@ -125,18 +118,15 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Painel direito — formulário */}
+      {/* Painel direito */}
       <div className="flex-1 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-md">
 
-          {/* Mobile logo */}
           <div className="lg:hidden text-center mb-8">
-            <img src="/image/logo-dnn.png" alt="De Novo Não!"
-              className="h-12 mx-auto mb-2" />
+            <img src="/image/logo-dnn.png" alt="De Novo Não!" className="h-12 mx-auto mb-2" />
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-
             <div className="mb-7">
               <h2 className="font-display font-bold text-2xl mb-1" style={{ color: DARK }}>
                 Bem-vindo de volta
@@ -147,8 +137,6 @@ export default function Login() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
-
-              {/* Login */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
                   Login
@@ -168,14 +156,12 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Senha */}
               <div>
                 <div className="flex justify-between items-center mb-1.5">
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                     Senha
                   </label>
-                  <button type="button" className="text-xs hover:underline"
-                    style={{ color: GREEN }}>
+                  <button type="button" className="text-xs hover:underline" style={{ color: GREEN }}>
                     Esqueceu a senha?
                   </button>
                 </div>
@@ -199,15 +185,12 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Lembrar */}
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={lembrar}
-                  onChange={e => setLembrar(e.target.checked)}
-                  className="rounded" />
+                  onChange={e => setLembrar(e.target.checked)} className="rounded" />
                 <span className="text-sm text-gray-500">Lembrar meu login</span>
               </label>
 
-              {/* Erro */}
               {erro && (
                 <div className="flex items-start gap-2 p-3 rounded-xl text-sm"
                   style={{ backgroundColor: '#fef2f2', color: '#dc2626' }}>
@@ -216,7 +199,6 @@ export default function Login() {
                 </div>
               )}
 
-              {/* Botão */}
               <button
                 type="submit"
                 disabled={loading || bloqueado}
@@ -225,10 +207,8 @@ export default function Login() {
                 style={{ backgroundColor: GREEN }}>
                 {loading ? 'Verificando...' : bloqueado ? `Aguarde ${countdown}s` : 'Entrar no sistema'}
               </button>
-
             </form>
 
-            {/* Divisor */}
             <div className="relative my-6">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-100" />
@@ -238,16 +218,15 @@ export default function Login() {
               </div>
             </div>
 
-            {/* Usuários demo */}
             <div className="grid grid-cols-2 gap-2">
               {[
-                { login: 'admin.tdb',     perfil: 'Admin',      cor: '#7ab800' },
-                { login: 'joao.silva',    perfil: 'Dentista',   cor: '#3b82f6' },
-                { login: 'rafael.gomes',  perfil: 'Gestor',     cor: '#f5821f' },
-                { login: 'fernanda.lima', perfil: 'Voluntário', cor: '#8b5cf6' },
+                { login: 'admin.tdb',     perfil: 'Admin',      cor: '#7ab800', senha: 'hash_admin'    },
+                { login: 'joao.silva',    perfil: 'Dentista',   cor: '#3b82f6', senha: 'hash_joao'     },
+                { login: 'rafael.gomes',  perfil: 'Gestor',     cor: '#f5821f', senha: 'hash_rafael'   },
+                { login: 'fernanda.lima', perfil: 'Voluntário', cor: '#8b5cf6', senha: 'hash_fernanda' },
               ].map(u => (
                 <button key={u.login} type="button"
-                  onClick={() => { setLoginVal(u.login); setSenha('hash_' + u.login.split('.')[0]); setErro('') }}
+                  onClick={() => { setLoginVal(u.login); setSenha(u.senha); setErro('') }}
                   className="text-left px-3 py-2 rounded-xl border border-gray-100 hover:border-gray-200
                              hover:bg-gray-50 transition-all">
                   <p className="text-xs font-semibold" style={{ color: u.cor }}>{u.perfil}</p>
@@ -255,7 +234,6 @@ export default function Login() {
                 </button>
               ))}
             </div>
-
           </div>
 
           <p className="text-center mt-6 text-xs text-gray-400">
