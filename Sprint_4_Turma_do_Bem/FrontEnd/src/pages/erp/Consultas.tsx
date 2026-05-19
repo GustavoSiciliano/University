@@ -7,6 +7,7 @@ import { FormField, inputClass } from '../../components/FormField'
 import Badge from '../../components/Badge'
 import EmptyState from '../../components/EmptyState'
 import { statusColor, statusLabel, formatDate } from '../../utils/formatters'
+import { useFeriados } from '../../hooks/useFeriados'
 
 const mock: Consulta[] = [
   { idConsulta: 1, idPaciente: 1, nomePaciente: 'Maria Oliveira', idDentista: 1, nomeDentista: 'Dr. João Silva',  dtConsulta: '2025-04-18', status: 'REALIZADA', observacoes: 'Limpeza concluída.' },
@@ -26,7 +27,16 @@ export default function Consultas() {
   const [filterStatus, setFilter]       = useState<StatusConsulta | ''>('')
   const [modalOpen,    setModalOpen]    = useState(false)
   const [editing,      setEditing]      = useState<Consulta | null>(null)
+  const [dataSelecionada, setDataSelecionada] = useState('')
+
   const { valores, erros, onChange, reset, validar } = useFormState(INICIAL)
+
+  const anoSelecionado = dataSelecionada
+    ? new Date(dataSelecionada + 'T00:00:00').getFullYear()
+    : new Date().getFullYear()
+
+  const { eFeriado, loading: loadingFeriados } = useFeriados(anoSelecionado)
+  const feriadoAviso = dataSelecionada ? eFeriado(dataSelecionada) : null
 
   const filtered = consultas.filter(c => {
     const matchSearch = c.nomePaciente.toLowerCase().includes(search.toLowerCase()) ||
@@ -35,12 +45,13 @@ export default function Consultas() {
     return matchSearch && matchStatus
   })
 
-  const openNew  = () => { setEditing(null); reset(); setModalOpen(true) }
+  const openNew  = () => { setEditing(null); reset(); setDataSelecionada(''); setModalOpen(true) }
   const openEdit = (c: Consulta) => {
     setEditing(c)
     reset({ idPaciente: c.idPaciente, nomePaciente: c.nomePaciente,
             idDentista: c.idDentista, nomeDentista: c.nomeDentista,
             dtConsulta: c.dtConsulta, status: c.status, observacoes: c.observacoes ?? '' })
+    setDataSelecionada(c.dtConsulta ?? '')
     setModalOpen(true)
   }
   const handleDelete = (id: number) => {
@@ -78,6 +89,30 @@ export default function Consultas() {
         </select>
       </div>
 
+      {/* Aviso de consultas agendadas em feriados */}
+      {(() => {
+        const agendadasEmFeriado = consultas.filter(c => c.status === 'AGENDADA' && eFeriado(c.dtConsulta) !== null)
+        if (agendadasEmFeriado.length === 0) return null
+        return (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 flex gap-3 items-start">
+            <span className="text-xl">⚠️</span>
+            <div>
+              <p className="font-semibold text-yellow-800 text-sm">Consultas agendadas em feriados nacionais</p>
+              <ul className="mt-1 space-y-0.5">
+                {agendadasEmFeriado.map(c => {
+                  const f = eFeriado(c.dtConsulta)!
+                  return (
+                    <li key={c.idConsulta} className="text-yellow-700 text-xs">
+                      • {c.nomePaciente} — {formatDate(c.dtConsulta)} ({f.name})
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          </div>
+        )
+      })()}
+
       {filtered.length === 0 ? <EmptyState icon="📅" title="Nenhuma consulta encontrada" /> : (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="overflow-x-auto">
@@ -92,24 +127,35 @@ export default function Consultas() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.map(c => (
-                  <tr key={c.idConsulta} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 font-medium text-gray-800">{c.nomePaciente}</td>
-                    <td className="px-6 py-4 text-gray-500 hidden sm:table-cell">{c.nomeDentista}</td>
-                    <td className="px-6 py-4 text-gray-500 hidden md:table-cell">{formatDate(c.dtConsulta)}</td>
-                    <td className="px-6 py-4">
-                      <Badge label={statusLabel[c.status]} className={statusColor[c.status]} />
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="secondary" onClick={() => openEdit(c)}>Editar</Button>
-                        {c.status === 'AGENDADA' && (
-                          <Button size="sm" variant="danger" onClick={() => handleDelete(c.idConsulta)}>Cancelar</Button>
+                {filtered.map(c => {
+                  const feriado = eFeriado(c.dtConsulta)
+                  return (
+                    <tr key={c.idConsulta} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 font-medium text-gray-800">{c.nomePaciente}</td>
+                      <td className="px-6 py-4 text-gray-500 hidden sm:table-cell">{c.nomeDentista}</td>
+                      <td className="px-6 py-4 text-gray-500 hidden md:table-cell">
+                        <span>{formatDate(c.dtConsulta)}</span>
+                        {feriado && c.status === 'AGENDADA' && (
+                          <span className="ml-2 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full"
+                            title={feriado.name}>
+                            🎉 Feriado
+                          </span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-6 py-4">
+                        <Badge label={statusLabel[c.status]} className={statusColor[c.status]} />
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="secondary" onClick={() => openEdit(c)}>Editar</Button>
+                          {c.status === 'AGENDADA' && (
+                            <Button size="sm" variant="danger" onClick={() => handleDelete(c.idConsulta)}>Cancelar</Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -126,7 +172,21 @@ export default function Consultas() {
             <input type="text" value={valores.nomeDentista} onChange={onChange('nomeDentista')} className={inputClass} placeholder="Nome do dentista" />
           </FormField>
           <FormField label="Data da consulta" error={erros.dtConsulta} required>
-            <input type="date" value={valores.dtConsulta} onChange={onChange('dtConsulta')} className={inputClass} />
+            <input type="date" value={valores.dtConsulta}
+              onChange={e => { onChange('dtConsulta')(e); setDataSelecionada(e.target.value) }}
+              className={inputClass} />
+            {loadingFeriados && dataSelecionada && (
+              <p className="text-xs text-gray-400 mt-1">Verificando feriados...</p>
+            )}
+            {feriadoAviso && !loadingFeriados && (
+              <div className="mt-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 flex gap-2 items-center">
+                <span>🎉</span>
+                <p className="text-xs text-yellow-700">
+                  <strong>{feriadoAviso.name}</strong> — esta data é um feriado nacional.
+                  Confirme se a consulta será mantida.
+                </p>
+              </div>
+            )}
           </FormField>
           <FormField label="Status">
             <select value={valores.status} onChange={onChange('status')} className={inputClass}>
@@ -134,7 +194,8 @@ export default function Consultas() {
             </select>
           </FormField>
           <FormField label="Observações" className="md:col-span-2">
-            <textarea rows={3} value={valores.observacoes} onChange={onChange('observacoes')} className={inputClass + ' resize-none'} />
+            <textarea rows={3} value={valores.observacoes} onChange={onChange('observacoes')}
+              className={inputClass + ' resize-none'} placeholder="Observações clínicas..." />
           </FormField>
           <div className="md:col-span-2 flex justify-end gap-3 mt-2">
             <Button variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
